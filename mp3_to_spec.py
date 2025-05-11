@@ -5,10 +5,12 @@ import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 import os
+from multiprocessing import Pool, cpu_count
 from tqdm import tqdm
 import gc
 
 
+BATCH_SIZE = 500
 DATA_PATH = Path("data")
 SPECTROGRAM_OUTPUT_PATH = Path("spectrogram")
 
@@ -50,10 +52,8 @@ def plot_spectrogram(signal, sample_rate, output: Path, fft_size=2048, hop_size=
     gc.collect()
 
 
-def process_files():
-    mp3_files = list((DATA_PATH / "fma_small").rglob('*.mp3'))
-
-    for mp3_file in tqdm(mp3_files):
+def process_mp3(mp3_file: Path):
+    try:
         # Read mp3 files
         signal, sample_rate = sf.read(mp3_file)
 
@@ -67,11 +67,16 @@ def process_files():
 
         # Plot and save spectrogram
         plot_spectrogram(signal, sample_rate, spectrogram_file)
+    except Exception as e:
+        print(f"Error processing {mp3_file}: {e}")
 
-        # Clear memory
-        del signal, sample_rate, mp3_file
-        gc.collect()
-    del mp3_files
+
+def process_files():
+    mp3_files = list((DATA_PATH / "fma_small").rglob('*.mp3'))
+
+    with Pool(cpu_count()) as pool:
+        list(tqdm(pool.imap_unordered(process_mp3, mp3_files), total=len(mp3_files)))
+
 
 if __name__ == "__main__":
     process_files()
