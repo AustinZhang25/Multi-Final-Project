@@ -1,0 +1,77 @@
+from pathlib import Path
+import soundfile as sf
+import librosa
+import cv2
+import matplotlib.pyplot as plt
+import numpy as np
+import os
+from tqdm import tqdm
+import gc
+
+
+DATA_PATH = Path("data")
+SPECTROGRAM_OUTPUT_PATH = Path("spectrogram")
+
+TICKS = np.array([31.25, 62.5, 125, 250, 500, 1000, 2000, 4000, 8000])
+TICK_LABELS = np.array(["31.25", "62.5", "125", "250", "500", "1k", "2k", "4k", "8k"])
+SAVE_PARAMS = {"dpi": 300, "bbox_inches": "tight", "transparent": True}
+
+
+def plot_spectrogram(signal, sample_rate, output: Path, fft_size=2048, hop_size=None, window_size=None):
+    # Compute default parameters
+    if not window_size:
+        window_size = fft_size
+    if not hop_size:
+        hop_size = fft_size // 4
+
+    # Convert audio to digital signal with fft
+    stft = librosa.stft(signal, n_fft=fft_size, hop_length=hop_size, win_length=window_size, center=False)
+    spectrogram = np.abs(stft)
+    spectrogram_db = librosa.amplitude_to_db(spectrogram, ref=np.max)
+
+    fig = plt.figure(figsize=(10, 4))
+    img = librosa.display.specshow(spectrogram_db, sr=sample_rate, x_axis='time', y_axis='log', hop_length=hop_size, cmap = 'gray')
+    plt.axis('off')
+
+    # Plot settings
+    # plt.xlabel("Time (s)")
+    # plt.ylabel("Frequency (Hz)")
+    # plt.yticks(TICKS, TICK_LABELS)
+    # plt.colorbar(img, format="%+2.f dBFS")
+
+    # Save plot
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output_path = output.with_stem(f"{output.stem}_spectrogram_win_length={window_size}_hop_length={hop_size}_n_fft={fft_size}")
+    plt.savefig(output_path, **SAVE_PARAMS)
+    plt.close(fig)
+
+    # Clear memory
+    del stft, spectrogram, spectrogram_db, img, fig
+    gc.collect()
+
+
+def process_files():
+    mp3_files = list((DATA_PATH / "fma_small").rglob('*.mp3'))
+
+    for mp3_file in tqdm(mp3_files):
+        # Read mp3 files
+        signal, sample_rate = sf.read(mp3_file)
+
+        # Change 2d stereo to 1d mono
+        if signal.ndim > 1:
+            signal = np.mean(signal, axis=1)
+
+        # This automatically places the output image in the same folder structure as the data folder.
+        # Do not edit this line.
+        spectrogram_file = SPECTROGRAM_OUTPUT_PATH / mp3_file.with_suffix(".png").relative_to(DATA_PATH)
+
+        # Plot and save spectrogram
+        plot_spectrogram(signal, sample_rate, spectrogram_file)
+
+        # Clear memory
+        del signal, sample_rate, mp3_file
+        gc.collect()
+    del mp3_files
+
+if __name__ == "__main__":
+    process_files()
