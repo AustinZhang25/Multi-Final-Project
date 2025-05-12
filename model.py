@@ -1,84 +1,96 @@
 import os
-
-from lazy_loader import attach
 from tqdm import tqdm
-import keras.api.applications.resnet50
-from keras.api import layers, models
 import numpy as np
 import tensorflow as tf
 from pathlib import Path
 import pandas as pd
-from sklearn.linear_model import Ridge
-from sklearn.model_selection import train_test_split
+from tensorflow.keras import layers, models
+from tensorflow.keras.applications import ResNet50
 from sklearn.metrics import mean_squared_error
-from keras.api.utils import image_dataset_from_directory
-from keras.api.models import Sequential
-from keras.api.layers import Conv2D, MaxPooling2D, Flatten, Dense
+from tensorflow.keras.backend import clear_session
 
-# Import labels from csv
-labels_data = pd.read_csv("data/echonest_processed.csv").values
+# Clear any previous session
+clear_session()
+# Import labels
+labels_data = pd.read_csv('data/echonest_norm.csv').values
 print(f"Label shape: {labels_data.shape}")
 
 def attach_label(image_path):
-    image_id = int(image_path.split("/")[-1].split("_")[0])
-    label = labels_data[labels_data[:, 0] == image_id, 1:].reshape(-1)
-    if len(label) == 0:
-        print(f"No label found for image {image_id}")
-    return image_path, label
+    try:
+        image_id = int(image_path.split("/")[-1].split("_")[0])
+        label = labels_data[labels_data[:, 0] == image_id, 1:]
+        if label.shape[0] == 0:
+            print(f"No label found for image {image_id}")
+            return None
+        return image_path, label.reshape(-1)
+    except Exception as e:
+        print(f"Error with {image_path}: {e}")
+        return None
 
-# Paths
+# Load image paths and labels
 data_path = Path("spectrogram")
-data_paths, labels = zip(*list(map(attach_label, sorted(map(str, data_path.glob("**/*.png"))))))
+all_image_paths = sorted(map(str, data_path.glob("**/*.png")))
+valid_pairs = list(filter(None, map(attach_label, all_image_paths)))
+
+if len(valid_pairs) == 0:
+    raise ValueError("No valid image-label pairs found!")
+
+data_paths, labels = zip(*valid_pairs)
 
 def load_image(image_path, label):
     image = tf.io.read_file(image_path)
     image = tf.image.decode_png(image, channels=3)
     image = tf.image.resize(image, (int(984 / 3), int(2385 / 3)))
-    image = keras.api.applications.resnet50.preprocess_input(image)
+    image = tf.keras.applications.resnet50.preprocess_input(image)
     return image, label
 
-dataset = tf.data.Dataset.from_tensor_slices((list(data_paths), list(labels))).map(load_image).batch(4)
+# Create dataset
+dataset = tf.data.Dataset.from_tensor_slices((list(data_paths), list(labels)))
+dataset = dataset.map(load_image, num_parallel_calls=tf.data.AUTOTUNE)
 
-resnet = keras.api.applications.resnet50.ResNet50(include_top=False, input_shape=(int(984 / 3), int(2385 / 3), 3), pooling='avg')
+# Shuffle and split dataset
+train_size = int(0.8 * len(data_paths))
+train_dataset = dataset.take(train_size).batch(4).prefetch(tf.data.AUTOTUNE)
+val_dataset = dataset.skip(train_size).batch(4).prefetch(tf.data.AUTOTUNE)
 
-# Extract features in batches
-features = []
-labels = []
-for images, batch_labels in tqdm(dataset):
-    batch_features = resnet(images, training=False)
-    features.append(batch_features.numpy())
-    labels.append(batch_labels.numpy())
+print("Dataset prepared.")
 
-# Combine all features and labels
-x = np.concatenate(features, axis=0)
-y = np.concatenate(labels, axis=0)
-
-# Split into train and test sets
-x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=7)
-
-# Train a linear regression model
+# Build model
+clear_session()
+base_model = ResNet50(weights=None, include_top=False, input_shape=(int(984 / 3), int(2385 / 3), 3))
 model = models.Sequential([
-    Dense(128, activation='relu'),
+    base_model,
+    layers.GlobalAveragePooling2D(),
+    layers.Dense(256, activation='relu'),
     layers.Dropout(0.3),
-    Dense(8, activation='linear')  # 8 features:
+    layers.Dense(8, activation='linear')
 ])
-model.build((None, x_train.shape[1]))
 model.compile(optimizer='adam', loss='mse', metrics=['mae'])
 model.summary()
-with tf.device('/device:GPU:0'):
-    model.fit(x_train, y_train, epochs=20, validation_data=(x_test, y_test))
 
-# Evaluate
-y_pred = model.predict(x_test)
+print("Start training")
+try:
+    with tf.device('/device:GPU:0'):
+        model.fit(train_dataset, epochs=20, validation_data=val_dataset)
+except Exception as e:
+    print(f"Training failed: {e}")
+    exit(1)
 
-# Prepare csv
-columns = {}
-for i in range(y_test.shape[1]):
-    columns[f'y_test_{i}'] = y_test[:, i]
-    columns[f'y_pred_{i}'] = y_pred[:, i]
-df = pd.DataFrame(columns)
+# Save results
+y_test = []
+y_pred = []
+for images, batch_labels in tqdm(val_dataset):
+    y_test.append(batch_labels.numpy())
+    y_pred.append(model.predict(images))
+y_test = np.concatenate(y_test, axis=0)
+y_pred = np.concatenate(y_pred, axis=0)
+
+df = pd.DataFrame({
+    **{f'y_test_{i}': y_test[:, i] for i in range(y_test.shape[1])},
+    **{f'y_pred_{i}': y_pred[:, i] for i in range(y_pred.shape[1])}
+})
 df.to_csv("data/evaluate.csv", index=False)
 
-# MSE
+# Report MSE
 mse = mean_squared_error(y_test, y_pred)
 print(f"Mean squared error: {mse}")
