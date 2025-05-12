@@ -1,4 +1,6 @@
 from pathlib import Path
+
+import pandas as pd
 import soundfile as sf
 import librosa
 import cv2
@@ -73,9 +75,17 @@ def process_mp3(mp3_file: Path):
 
 def process_files():
     mp3_files = list((DATA_PATH / "fma_small").rglob('*.mp3'))
+    mp3_files_with_data = []
+
+    echonest = pd.read_csv("data/echonest.csv")
+    songs_data = pd.to_numeric(echonest[echonest.columns[0]], errors='coerce').dropna().astype(int).tolist()
+    for mp3 in mp3_files:
+        song_name = int(mp3.stem)
+        if song_name in songs_data:
+            mp3_files_with_data.append(mp3)
 
     with Pool(cpu_count()) as pool:
-        list(tqdm(pool.imap_unordered(process_mp3, mp3_files), total=len(mp3_files)))
+        list(tqdm(pool.imap_unordered(process_mp3, mp3_files_with_data), total=len(mp3_files_with_data)))
 
 
 if __name__ == "__main__":
