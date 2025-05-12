@@ -18,7 +18,7 @@ SPECTROGRAM_OUTPUT_PATH = Path("spectrogram")
 
 TICKS = np.array([31.25, 62.5, 125, 250, 500, 1000, 2000, 4000, 8000])
 TICK_LABELS = np.array(["31.25", "62.5", "125", "250", "500", "1k", "2k", "4k", "8k"])
-SAVE_PARAMS = {"dpi": 300, "bbox_inches": "tight", "transparent": True}
+SAVE_PARAMS = {"dpi": 300, "bbox_inches": "tight", "transparent": False, "pad_inches": 0}
 
 
 def plot_spectrogram(signal, sample_rate, output: Path, fft_size=2048, hop_size=None, window_size=None):
@@ -74,7 +74,7 @@ def process_mp3(mp3_file: Path):
 
 
 def process_files():
-    mp3_files = list((DATA_PATH / "fma_small").rglob('*.mp3'))
+    mp3_files = list((DATA_PATH / "fma_large").rglob('*.mp3'))
     mp3_files_with_data = []
 
     echonest = pd.read_csv("data/echonest.csv")
@@ -84,7 +84,7 @@ def process_files():
         if song_name in songs_data:
             mp3_files_with_data.append(mp3)
 
-    with Pool(cpu_count()) as pool:
+    with Pool(int(cpu_count() / 4)) as pool:
         list(tqdm(pool.imap_unordered(process_mp3, mp3_files_with_data), total=len(mp3_files_with_data)))
 
 
