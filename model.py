@@ -3,6 +3,7 @@ import os
 from lazy_loader import attach
 from tqdm import tqdm
 import keras.api.applications.resnet50
+from keras.api import layers, models
 import numpy as np
 import tensorflow as tf
 from pathlib import Path
@@ -56,9 +57,16 @@ y = np.concatenate(labels, axis=0)
 x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=7)
 
 # Train a linear regression model
-model = Ridge(alpha=0.1)
+model = models.Sequential([
+    Dense(128, activation='relu'),
+    layers.Dropout(0.3),
+    Dense(8, activation='linear')  # 8 features:
+])
+model.build((None, x_train.shape[1]))
+model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+model.summary()
 with tf.device('/device:GPU:0'):
-    model.fit(x_train, y_train)
+    model.fit(x_train, y_train, epochs=20, validation_data=(x_test, y_test))
 
 # Evaluate
 y_pred = model.predict(x_test)
