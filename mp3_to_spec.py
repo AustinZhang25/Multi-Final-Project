@@ -11,7 +11,7 @@ import gc
 
 
 BATCH_SIZE = 500
-DATA_PATH = Path("data")
+DATA_PATH = Path("audio")
 SPECTROGRAM_OUTPUT_PATH = Path("spectrogram")
 
 TICKS = np.array([31.25, 62.5, 125, 250, 500, 1000, 2000, 4000, 8000])
