@@ -1,5 +1,6 @@
 # Ignore data and spectrograms
 audio/fma_small
-spectrogram/fma_small
 audio/fma_large
+spectrogram/fma_small
 spectrogram/fma_large
+models/
