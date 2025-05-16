@@ -74,13 +74,13 @@ def process_mp3(mp3_file: Path):
 
 
 def process_files():
-    mp3_files = list((DATA_PATH / "test_data").rglob('*.mp3'))
+    mp3_files = list((DATA_PATH / "test_data").rglob('Bach0_30.mp3'))
     mp3_files_with_data = []
 
     echonest = pd.read_csv("data/echonest.csv")
     songs_data = pd.to_numeric(echonest[echonest.columns[0]], errors='coerce').dropna().astype(int).tolist()
     for mp3 in mp3_files:
-        song_name = int(mp3.stem)
+        song_name = mp3.stem
         # if song_name in songs_data:
         mp3_files_with_data.append(mp3)
 
